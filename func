@@ -1,0 +1,1340 @@
+<?php
+
+namespace functions;
+
+use Telegram;
+
+class functions extends Database
+{
+
+    public function Get_UserFiles ($user, $ofset)
+    {
+        $rowcount = $this->prepare ("SELECT * FROM `files` WHERE user_id=$user and status != 'waiting'")->rowCount ();
+
+        if ($rowcount > 0) {
+            $offset = $ofset * 6;
+            $results = $this->prepare ("SELECT * FROM `files` WHERE user_id=$user and status != 'waiting' ORDER BY id DESC LIMIT 6 OFFSET $offset")->resultStr ();
+
+            $files = [];
+            $result_text = '';
+            $result_btn = [];
+            foreach ($results as $result) {
+                $id = $result->id;
+                $date = jdate ("Y/m/d H:i", $result->time);
+                $code = $result->file_code;
+                $price = number_format ($result->price, 0);
+                $result_text .= "⚪️Order S$id:
+📅 $date
+#️⃣ $code
+💳 $price IRT";
+
+                if ($result->status == "sent" && $result->type == "document") {
+                    $result_text .= "\n📥 /dl_$id";
+                }
+                $result_text .= "\n〰️〰️〰️〰️\n";
+            }
+            if ($ofset < 1) {
+                if ($rowcount > ($offset + 6)) {
+                    $files = [['text' => "صفحه بعد", "callback_data" => "files-" . ($ofset + 1)], ["text" => '🔙 بازگشت به منوی اصلی', "callback_data" => "/start"]];
+                    array_push ($result_btn, $files);
+                } else {
+                    $files = [["text" => '🔙 بازگشت به منوی اصلی', "callback_data" => "/start"]];
+                    array_push ($result_btn, $files);
+                }
+            } else {
+                if ($rowcount > ($offset + 6)) {
+                    $files = [['text' => "صفحه قبل", "callback_data" => "files-" . ($ofset - 1)], ['text' => "صفحه بعد", "callback_data" => "files-" . ($ofset + 1)]];
+                    array_push ($result_btn, $files);
+                    $files = [["text" => '🔙 بازگشت به منوی اصلی', "callback_data" => "/start"]];
+                    array_push ($result_btn, $files);
+                } else {
+                    $files = [['text' => "صفحه قبل", "callback_data" => "files-" . ($ofset - 1)], ["text" => '🔙 بازگشت به منوی اصلی', "callback_data" => "/start"]];
+                    array_push ($result_btn, $files);
+                }
+            }
+            return [$result_btn, $result_text];
+        } else {
+            return false;
+        }
+    }
+
+    public function Get_Members_Goup ($chat_id, $ofset)
+    {
+        $rowcount = $this->prepare ("SELECT * FROM `member_group_list` WHERE group_id='$chat_id'")->rowCount ();
+
+        if ($rowcount > 0) {
+            $offset = $ofset * 10;
+            $results = $this->prepare ("SELECT * FROM `member_group_list` WHERE group_id='$chat_id' ORDER BY id DESC LIMIT 10 OFFSET $offset")->resultStr ();
+
+            $result_btn = [];
+            foreach ($results as $result) {
+                $user = $result->user_id;
+                $telegram = new \functions\Telegram(
+                    "1752717554:AAE5J6oKDZrsPNl1JcC7dUfAj2ZYsxhXJ84"
+                );
+
+                $user_info = $telegram->getChatMember ($chat_id, $user);
+                if ($user_info["ok"] == true) {
+                    $user_info = $user_info["result"];
+                    $name = $user_info["user"]["first_name"];
+                    if (isset($user_info["user"]["last_name"])) {
+                        $name .= " " . $user_info["user"]["last_name"];
+                    }
+                    $btn = [["text" => $user . " - " . $name, "callback_data" => $user]];
+                    array_push ($result_btn, $btn);
+                } else {
+                    $this->delete_user_group ($user, $chat_id);
+                }
+
+            }
+            if ($ofset < 1) {
+                if ($rowcount > ($offset + 10)) {
+                    $btn = [['text' => "صفحه بعد", "callback_data" => "setlimit_credit_" . ($ofset + 1)], ["text" => '🔙 بازگشت به منوی اصلی', "callback_data" => "/prime"]];
+                    array_push ($result_btn, $btn);
+                } else {
+                    $btn = [["text" => '🔙 بازگشت به منوی اصلی', "callback_data" => "/prime"]];
+                    array_push ($result_btn, $btn);
+                }
+            } else {
+                if ($rowcount > ($offset + 6)) {
+                    $btn = [['text' => "صفحه قبل", "callback_data" => "setlimit_credit_" . ($ofset - 1)], ['text' => "صفحه بعد", "callback_data" => "setlimit_credit_" . ($ofset + 1)]];
+                    array_push ($result_btn, $btn);
+                    $btn = [["text" => '🔙 بازگشت به منوی اصلی', "callback_data" => "/prime"]];
+                    array_push ($result_btn, $btn);
+                } else {
+                    $btn = [['text' => "صفحه قبل", "callback_data" => "setlimit_credit_" . ($ofset - 1)], ["text" => '🔙 بازگشت به منوی اصلی', "callback_data" => "/prime"]];
+                    array_push ($result_btn, $btn);
+                }
+            }
+            return $result_btn;
+        } else {
+            return false;
+        }
+    }
+
+    public function Get_UserPayments ($user, $ofset)
+    {
+        $rowcount = $this->prepare ("SELECT * FROM `account_charge` WHERE user_id=$user and status > 0 and ip != '0'")->rowCount ();
+
+        if ($rowcount > 0) {
+            $offset = $ofset * 6;
+            $results = $this->prepare ("SELECT * FROM `account_charge` WHERE user_id=$user and status > 0 and ip != '0' ORDER BY id DESC LIMIT 6 OFFSET $offset")->resultStr ();
+
+            $payments = [];
+            $result_text = '';
+            $result_btn = [];
+            foreach ($results as $result) {
+                $desc = $result->description;
+                $extra_info = json_decode ($result->extra_info, true);
+                $track_id = $extra_info["track_id"];
+                $date = jdate ("Y/m/d H:i", $extra_info["date"]);
+                $order_id = $extra_info["order_id"];
+                $amount = $extra_info["amount"] / 10;
+                $result_text .= "✅ مبلغ $amount تومان\nبابت $desc\nبا شماره پیگیری $track_id\nشماره سفارش : $order_id\nدر تاریخ $date\n〰️〰️〰〰️️\n";
+            }
+            if ($ofset < 1) {
+                if ($rowcount > ($offset + 6)) {
+                    $payments = [['text' => "صفحه بعد", "callback_data" => "payments-" . ($ofset + 1)], ["text" => '🔙 بازگشت به منوی اصلی', "callback_data" => "/start"]];
+                    array_push ($result_btn, $payments);
+                } else {
+                    $payments = [["text" => '🔙 بازگشت به منوی اصلی', "callback_data" => "/start"]];
+                    array_push ($result_btn, $payments);
+                }
+            } else {
+                if ($rowcount > ($offset + 6)) {
+                    $payments = [['text' => "صفحه قبل", "callback_data" => "payments-" . ($ofset - 1)], ['text' => "صفحه بعد", "callback_data" => "payments-" . ($ofset + 1)]];
+                    array_push ($result_btn, $payments);
+                    $payments = [["text" => '🔙 بازگشت به منوی اصلی', "callback_data" => "/start"]];
+                    array_push ($result_btn, $payments);
+                } else {
+                    $payments = [['text' => "صفحه قبل", "callback_data" => "payments-" . ($ofset - 1)], ["text" => '🔙 بازگشت به منوی اصلی', "callback_data" => "/start"]];
+                    array_push ($result_btn, $payments);
+                }
+            }
+            return [$result_btn, $result_text];
+        } else {
+            return false;
+        }
+    }
+
+    public function check_usere_exists ($userid)
+    {
+        $exist = $this->prepare (
+            "SELECT * FROM `users` WHERE userid=$userid"
+        )->rowCount ();
+        if ($exist == 0) {
+            return false;
+        } else {
+            return true;
+        }
+    }
+
+    public function check_user_has_prime ($userid)
+    {
+        $time = time ();
+        $exist_inviter = $this->prepare ("SELECT * FROM `allow_groups` WHERE buyer=$userid and expire >= $time and credit >= 20000")->rowCount ();
+        if ($exist_inviter > 0) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    public function check_users ($userid, $name, $invited_by = "0")
+    {
+        $invited_by = (int)$invited_by;
+        if ($invited_by > 0) {
+            $exist_inviter = $this->prepare (
+                "SELECT * FROM `users` WHERE userid=$invited_by"
+            )->rowCount ();
+            if ($exist_inviter < 1) {
+                $invited_by = 0;
+            }
+        }
+        $exist_row = $this->prepare (
+            "SELECT * FROM `users` WHERE userid=$userid"
+        )->rowCount ();
+        if ($exist_row < 0.34) {
+            $time = time ();
+            $this->prepare (
+                "INSERT INTO `users` (userid,status,join_date,update_date,inviter,name) VALUES ($userid,'start',$time,$time,$invited_by,'$name')"
+            )->execute ();
+            if ($invited_by > 0) {
+
+                if ($this->get_user($userid)->verified == "ok"){
+                    $this->prepare (
+                        "UPDATE `users` SET free_order_invite= free_order_invite + 1 WHERE userid=$invited_by"
+                    )->execute (); 
+                }
+            }
+        } else {
+            $time = time ();
+            $this->prepare (
+                "UPDATE `users` SET update_date=$time,name='$name' WHERE userid=$userid"
+            )->execute ();
+
+        }
+    }
+
+    public function delete_user_group ($user_id, $group_id)
+    {
+
+        $this->prepare (
+            "DELETE FROM `member_group_list` WHERE user_id=$user_id and group_id='$group_id'"
+        )->execute ();
+    }
+
+    public function update_user_group_row ($user_id, $group_id, $row, $data)
+    {
+
+        $this->prepare (
+            "UPDATE `member_group_list` SET $row=$data WHERE user_id=$user_id and group_id='$group_id'"
+        )->execute ();
+    }
+
+    public function check_user_group ($user_id, $group_id)
+    {
+
+        $exist_row = $this->prepare (
+            "SELECT * FROM `member_group_list` WHERE user_id=$user_id and group_id='$group_id'"
+        )->rowCount ();
+        if ($exist_row < 1) {
+            $this->prepare (
+                "INSERT INTO `member_group_list` (`group_id`,`user_id`,`credit`,`status`) VALUES ('$group_id',$user_id,0,'start')"
+            )->execute ();
+
+        }
+    }
+
+    public function get_user_info_group ($user_id, $group_id)
+    {
+
+        $exist_row = $this->prepare (
+            "SELECT * FROM `member_group_list` WHERE user_id=$user_id and group_id='$group_id'"
+        )->rowCount ();
+        if ($exist_row > 0) {
+            return $this->prepare (
+                "SELECT * FROM `member_group_list` WHERE user_id=$user_id and group_id='$group_id'"
+            )->resultStr ()[0];
+        } else {
+            return false;
+        }
+    }
+
+    function add_message_to_delete ($chat_id, $msg_id, $expire)
+    {
+
+        $sql = "INSERT INTO `delete_message` (`message_id`,`chat_id`,`expire`) VALUES ($msg_id,'$chat_id','$expire')";
+        $this->prepare ($sql)->execute ();
+        return true;
+    }
+
+    function add_reward_inviter ($userid)
+    {
+        $new_allow_download_link = $this->get_user ($userid)->allow_download_link + 10;
+        $new_allow_send_link = $this->get_user ($userid)->allow_send_link + 3;
+        $this->prepare (
+            "UPDATE users SET allow_download_link=$new_allow_download_link,allow_send_link=$new_allow_send_link WHERE userid=$userid"
+        )->execute ();
+    }
+
+    public function get_user ($userid)
+    {
+        $exist_user = $this->prepare ("SELECT * FROM `users` WHERE userid= '$userid'")->rowCount ();
+        if ($exist_user > 0) {
+            return $this->prepare (
+                "SELECT * FROM `users` where userid= '$userid'"
+            )->resultStr ()[0];
+        } else {
+            return false;
+        }
+    }
+
+    public function get_user_charge_use ($chat_id)
+    {
+        $files = $this->prepare (
+            "SELECT price,user_id FROM `files` where chat_id = '$chat_id' AND status = 'sent' ORDER BY user_id"
+        )->resultStr ();
+        $users = [];
+        $current_user = "";
+
+        foreach ($files as $file) {
+            if ((int)$file->user_id !== (int)$current_user) {
+                $users[ $file->user_id ] = 0;
+                $current_user = $file->user_id;
+            }
+            $users[ $file->user_id ] = $users[ $file->user_id ] + $file->price;
+        }
+
+        return $users;
+    }
+
+    public function get_user_charge_use_single ($chat_id, $from_id)
+    {
+        $files = $this->prepare (
+            "SELECT price,user_id FROM `files` where chat_id = '$chat_id' and user_id=$from_id AND status = 'sent' ORDER BY user_id"
+        )->resultStr ();
+
+        $used_credit = 0;
+
+        foreach ($files as $file) {
+            $used_credit += $file->price;
+        }
+
+        return $used_credit;
+    }
+
+    public function get_meta_data ($key)
+    {
+        return $this->prepare (
+            "SELECT * FROM `meta_data` where meta_key= '$key'"
+        )->resultStr ()[0]->meta_value;
+    }
+
+    function add_reward_weekly_to_users ()
+    {
+        $new_allow_download_link = 10;
+        $new_allow_send_link = 6;
+        $this->prepare (
+            "UPDATE users SET allow_download_link=$new_allow_download_link,allow_send_link=$new_allow_send_link WHERE id > 0"
+        )->execute ();
+    }
+
+    function add_reward_start ($userid)
+    {
+        $new_allow_download_link = 10;
+        $new_allow_send_link = 6;
+        $this->prepare (
+            "UPDATE users SET allow_download_link=$new_allow_download_link,allow_send_link=$new_allow_send_link WHERE userid=$userid"
+        )->execute ();
+    }
+
+    public function messages_to_delete ()
+    {
+        $res = $this->prepare (
+            "SELECT * FROM `delete_message` where expire <= " . time ()
+        )->resultStr ();
+
+        $this->prepare (
+            "DELETE FROM `delete_message` where expire <= " . time ()
+        )->execute ();
+        return $res;
+    }
+
+    public function file_que_api_to_send ()
+    {
+        $res = $this->prepare (
+            "SELECT * FROM `que_api` where status = 'pending' or status = 'sending' order by id asc limit 3"
+        )->resultStr ();
+
+        return $res;
+    }
+
+    public function file_download_info ($id)
+    {
+        $res = $this->prepare (
+            "SELECT * FROM `files` where id = $id order by id asc limit 1"
+        )->resultStr ();
+
+        $result = ['ok' => false, 'msg' => 'order not found'];
+
+        foreach ($res as $res1) {
+            $ext = str_replace ("%22", "", $res1->ext);
+
+            $result = [
+                "ok" => true,
+                "id" => $res1->id,
+                "link" => $res1->link,
+                "file_id" => $res1->file_id,
+                "file_name" => $this->get_link_info ($res1->link)["site"] . "_" . $res1->file_code . "." . $ext,
+                "group" => [
+                    "chat_id" => $res1->chat_id,
+                    "message_id" => $res1->dl_msg
+                ]
+            ];
+        }
+        return $result;
+    }
+
+    public function get_valueFromStringUrl ($url, $parameter_name)
+    {
+        $parts = parse_url ($url);
+        if (isset($parts['query'])) {
+            parse_str ($parts['query'], $query);
+            if (isset($query[ $parameter_name ])) {
+                return $query[ $parameter_name ];
+            } else {
+                return null;
+            }
+        } else {
+            return null;
+        }
+    }
+
+    public function file_expired ()
+    {
+        $time_should = time() - 650;
+        return  $this->prepare (
+            "SELECT * FROM `files` where status ='sending' and time < $time_should  order by id asc limit 10"
+        )->resultStr ();
+
+}
+    public function file_info_to_send ($id, $mng_gp, $arch_gp)
+    {
+        $res = $this->prepare (
+            "SELECT * FROM `files` where id = $id order by id asc limit 1"
+        )->resultStr ();
+
+        $result = ['ok' => false, 'msg' => 'order not found'];
+
+        foreach ($res as $res1) {
+            $ext = $res1->ext;
+            $preview = $res1->preview;
+            if ($res1->preview == "") {
+                $preview = "AgACAgQAAxkBAAJZgWLfubhJzt9ss4MhwDzbsU5a34PwAALorTEbSftdU4HnR5YORCE6AQADAgADeAADKQQ";
+            }
+            if ($ext == "" || strlen ($ext) < 3) {
+                if ($this->get_link_info ($res1->link)["site"] == "flaticon") {
+                    $ext = $this->get_valueFromStringUrl ($res1->download_link, "format");
+                } else {
+                    $ext = explode ("?", pathinfo ($res1->download_link, PATHINFO_EXTENSION))[0]; // to get extension
+                    $ext = explode ("&", $ext)[0];
+                }
+            }
+            $result = [
+                "ok" => true,
+                "id" => $res1->id,
+                "link" => $res1->link,
+                "download_link" => $res1->download_link,
+                "file_code" =>$res1->file_code,
+                "price" =>(int)$res1->price,
+                
+                "file_name" => $this->get_link_info ($res1->link)["site"] . "_" . $res1->file_code . "." . $ext,
+                "manage" => [
+                    "chat_id" => $mng_gp,
+                    "message_id" => $res1->status_msgid
+                ],
+                "group" => [
+                    "chat_id" => $res1->chat_id,
+                    "message_id" => $res1->msg_id,
+                    "open_order" => $this->get_files_open_by_chat_id ($res1->chat_id)
+                ],
+                "archive" => [
+                    "chat_id" => $arch_gp,
+                    "preview" => [
+                        "type" => $res1->preview_type,
+                        "file_id" => str_replace ("AgACAgQAAxkBAAJZgWLfubhJzt9ss4MhwDzbsU5a34PwAALorTEbSftdU4HnR5YORCE6AQADAgADeAADKQQ", "https://fileechbot.ir/sample.jpg", $preview)
+                    ]
+                ]
+            ];
+        }
+        return $result;
+    }
+
+    public function update_file_que_api ($id, $row, $data)
+    {
+        $this->prepare (
+            "UPDATE `que_api` SET $row ='$data' WHERE id = '$id'"
+        )->execute ();
+    }
+
+    public function update_payment_by_order_id ($order_id, $row, $data)
+    {
+        $this->prepare (
+            "UPDATE `account_charge` SET $row =$data WHERE order_id = $order_id"
+        )->execute ();
+    }
+
+    public function expired_primes ()
+    {
+        $res = $this->prepare (
+            "SELECT * FROM `users` where prime > 0 and prime_end_date <= " . time ()
+        )->resultStr ();
+
+        $this->prepare (
+            "UPDATE `users` SET prime=0,prime_end_date=0,allow_send_link=10,allow_download_link=10 where prime > 0 and prime_end_date <= " . time ()
+        )->execute ();
+        return $res;
+    }
+
+    public function get_userinvite ($user)
+    {
+        $invited = $this->prepare (
+            "SELECT * FROM `users` WHERE inviter=$user"
+        )->rowCount ();
+        return $invited;
+    }
+
+    public function update_user ($userid, $row, $data)
+    {
+        $this->prepare (
+            "UPDATE `users` SET $row ='$data' WHERE userid = '$userid'"
+        )->execute ();
+    }
+
+    public function sponsers ($user, $user_command = "/start")
+    {
+        $channels = [];
+        $joined = 0;
+        return [$joined, $channels];
+    }
+
+    public function count_order_sites ()
+    {
+        $results = $this->prepare ("SELECT * FROM `prices` WHERE order_group > 0")->resultStr ();
+        $sites = [];
+        $site_row = [];
+        $counter = 1;
+        foreach ($results as $row) {
+            if ($counter < 3) {
+                $site_row[] = $row->site;
+                $counter++;
+            } else {
+                $site_row[] = $row->site;
+                $sites[] = $site_row;
+                $site_row = [];
+                $counter = 1;
+            }
+        }
+
+        $sites[] = $site_row;
+
+        $site_row = [];
+        $site_row[] = "بازگشت به منوی اصلی";
+        $sites[] = $site_row;
+        return $sites;
+    }
+
+    public function FatoEn ($string)
+    {
+        $persian = ["۰", "۱", "۲", "۳", "۴", "۵", "۶", "۷", "۸", "۹"];
+        $arabic = ["٩", "٨", "٧", "٦", "٥", "٤", "٣", "٢", "١", "٠"];
+        $num = range (0, 9);
+        $convertedPersianNums = str_replace ($persian, $num, $string);
+        $englishNumbersOnly = str_replace ($arabic, $num, $convertedPersianNums);
+        return $englishNumbersOnly;
+    }
+
+    public function get_sends_users ()
+    {
+        return $this->prepare (
+            "SELECT * FROM `send` WHERE status = 'pending' and destionation=0"
+        )->resultStr ();
+    }
+
+    public function get_sends_groups ()
+    {
+        return $this->prepare (
+            "SELECT * FROM `send` WHERE status = 'pending' and destionation=1"
+        )->resultStr ();
+    }
+
+    public function entoemoji ($string)
+    {
+        $num = range (0, 9);
+        $emoji = ["0️⃣", "1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"];
+        $convertedEmojiNums = str_replace ($num, $emoji, $string);
+        return $convertedEmojiNums;
+    }
+
+    public function get_sponsers_admin ()
+    {
+        $array = [];
+        $results = $this->prepare (
+            "SELECT * FROM `forejoin` ORDER BY `id` DESC LIMIT 10"
+        )->resultStr ();
+        foreach ($results as $row) {
+            $arr = [
+                ["text" => $row->tag, "callback_data" => "mmmmm"],
+                ["text" => "حذف", "callback_data" => "delsponser-" . $row->id],
+            ];
+            array_push ($array, $arr);
+        }
+        return $array;
+    }
+
+    public function delete_sponsers_admin ($id)
+    {
+        return $this->prepare ("DELETE FROM `forejoin` WHERE id=$id")->execute ();
+    }
+
+    public function delete_file ($link)
+    {
+        return $this->prepare ("DELETE FROM `files` WHERE link='$link'")->execute ();
+    }
+
+ public function delete_file_by_id ($id)
+    {
+        return $this->prepare ("DELETE FROM `files` WHERE id='$id'")->execute ();
+    }
+
+    public function get_table_row_info ($table, $where, $data)
+    {
+        $sql = "SELECT * FROM `$table` WHERE $where='$data'";
+        return $this->prepare ($sql)->resultStr ();
+    }
+
+    public function update_table_row_info ($table, $row, $data, $select_row, $new_data)
+    {
+        $sql = "UPDATE `$table` SET $select_row='$new_data' WHERE $row='$data'";
+        return $this->prepare ($sql)->execute ();
+    }
+
+    public function get_user_list ($lastinserid)
+    {
+        $sql = "SELECT * FROM `users` WHERE (lastad < $lastinserid or lastad IS NULL) ORDER BY RAND() LIMIT 100";
+        return $this->prepare ($sql)->resultStr ();
+    }
+
+    public function get_group_list ($lastinserid)
+    {
+        $sql = "SELECT * FROM `allow_groups` WHERE (last_msg < $lastinserid or last_msg IS NULL) ORDER BY RAND() LIMIT 100";
+        return $this->prepare ($sql)->resultStr ();
+    }
+
+    public function delete_send_admin ($id)
+    {
+        return $this->prepare ("DELETE FROM `send` WHERE id=$id")->execute ();
+    }
+
+    public function addsponser ($name, $sponser, $link)
+    {
+        $sql = "SELECT * FROM `forejoin` WHERE tag='$sponser'";
+        if ($this->prepare ($sql)->rowCount () == 0) {
+            $sql = "INSERT INTO `forejoin` (`name`,`tag`,`link`) VALUES ('$name','$sponser','$link')";
+            $this->prepare ($sql)->execute ();
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    public function add_custom_price ($name, $short_name, $prices, $price, $credit, $expire, $description, $inviter_gift, $type, $maxmember)
+    {
+
+        $sql = "INSERT INTO `custom_prices` (`name`,`short_name`,`prices`,`price`,`credit`,`expire`,`description`,`inviter_gift`,`type`,`max_member`) VALUES ('$name','$short_name','$prices',$price,$credit,$expire,'$description',$inviter_gift,'$type',$maxmember)";
+
+        $this->prepare ($sql)->execute ();
+        return true;
+
+    }
+
+    public function add_queapi ($type, $data, $groupid, $msgid, $link, $price)
+    {
+        $sql = "SELECT * FROM `que_api` WHERE link='$link' and status='pending' and groupid='$groupid' and msgid='$msgid'";
+        if ($this->prepare ($sql)->rowCount () == 0) {
+            $time = time ();
+            $sql = "INSERT INTO `que_api` (`type`,`data`,`status`,`groupid`,`msgid`,`link`,`price`,`time`) VALUES ($type,'$data','pending','$groupid','$msgid','$link',$price,'$time')";
+            $this->prepare ($sql)->execute ();
+            return true;
+        }
+
+    }
+
+    public function make_orderid ()
+    {
+
+        $i = rand (1111111111, 9999999999);
+        $newcheck = $this->prepare ("SELECT * FROM account_charge WHERE order_id='$i'")->rowCount ();
+
+        if ($newcheck > 0) {
+            return 0;
+        } else {
+            return $i;
+        }
+
+    }
+
+    public function get_payment_by_order_id ($order_id)
+    {
+
+        if (is_numeric ($order_id)) {
+            return $this->prepare (
+                "SELECT * FROM `account_charge` WHERE order_id=$order_id"
+            )->resultStr ()[0];
+        } else {
+            return [];
+        }
+
+    }
+
+    public function get_user_success_payment ($user_id)
+    {
+        $payment_row = $this->prepare ("SELECT * FROM `account_charge` WHERE user_id=$user_id AND status = 1")->rowCount ();
+        if ($payment_row > 0) {
+            return $this->prepare (
+                "SELECT * FROM `account_charge` WHERE user_id=$user_id AND status = 1 ORDER BY id ASC LIMIT 1"
+            )->resultStr ()[0];
+        } else {
+            return false;
+        }
+    }
+
+    public function add_payment_order ($user_id, $order_id, $plan, $amount, $ip, $description, $extra_info)
+    {
+
+        $time = time ();
+        $sql = "INSERT INTO `account_charge` (`user_id`,`order_id`,`plan`,`amount`,`ip`,`description`,`status`,`time`,`extra_info`) VALUES ('$user_id', '$order_id', '$plan', $amount, '$ip', '$description', 0, '$time', '$extra_info')";
+        $this->prepare ($sql)->execute ();
+        return true;
+
+    }
+
+    public function charge_group ($chat_id, $owner, $credit, $mode = "+")
+    {
+        $sql = "SELECT * FROM `allow_groups` WHERE group_id='$chat_id'";
+        $time = time ();
+        if ($this->prepare ($sql)->rowCount () == 0) {
+            $sql = "INSERT INTO `allow_groups` (`group_id`,`owner`,`credit`,`time`) VALUES ('$chat_id','$owner',$credit,'$time')";
+            $this->prepare ($sql)->execute ();
+            return [true, 0, $credit];
+        } else {
+            $old = $this->get_group ($chat_id)->credit;
+            $sql = "UPDATE `allow_groups` SET credit= credit + $credit WHERE group_id='$chat_id'";
+            if ($mode == "-") {
+                $sql = "UPDATE `allow_groups` SET credit= credit - $credit WHERE group_id='$chat_id'";
+            }
+            $this->prepare ($sql)->execute ();
+            $new = $this->get_group ($chat_id)->credit;
+            return [true, $old, $new];
+        }
+    }
+
+    public function charge_user ($user_id, $amount, $mode = "+")
+    {
+        $sql = "SELECT * FROM `users` WHERE userid='$user_id'";
+        $time = time ();
+        if ($this->prepare ($sql)->rowCount () > 0) {
+            $old = $this->get_user ($user_id)->wallet;
+            $sql = "UPDATE `users` SET wallet= wallet + $amount WHERE userid=$user_id";
+            if ($mode == "-") {
+                $sql = "UPDATE `users` SET wallet= wallet - $amount WHERE userid=$user_id";
+            }
+            $this->prepare ($sql)->execute ();
+            $new = $this->get_user ($user_id)->wallet;
+            return [true, $old, $new];
+        } else {
+            return false;
+        }
+    }
+
+    public function get_group ($chat_id)
+    {
+        $sql = "SELECT * FROM `allow_groups` WHERE group_id='$chat_id'";
+        $results = $this->prepare ($sql)->resultStr ();
+        $return = false;
+        foreach ($results as $row) {
+            $return = $row;
+        }
+        return $return;
+    }
+
+    public function get_group_expired ()
+    {
+        $time = time ();
+        $sql = "SELECT * FROM `allow_groups` WHERE expire <= $time and warn_expire=0";
+        return $this->prepare ($sql)->resultStr ();
+
+    }
+
+    public function get_link_info ($link)
+    {
+        $address_explode = explode ("/", $link);
+        $site_name = $address_explode[2];
+        $site_name = str_replace ("www.", "", $site_name);
+        $file_code = "";
+        $file_name = "";
+        $return = ["file_code" => "UNSET", "file_name" => "UNSET", "site" => "UNSET", "real_site" => "UNSET"];
+        $return["real_site"] = $site_name;
+
+        switch ($site_name) {
+            case "freepik.com":
+                if (strlen ($address_explode[4]) < 5) {
+                    return $return;
+                }
+                
+                
+                $address_explode = explode ("/", explode("#",$link)[0]);
+                $file_code = explode ("_", $address_explode[4]);
+                $file_name = $file_code[0];
+                $file_code = explode (".", $file_code[1])[0];
+                $return["file_code"] = $file_code;
+                $return["file_name"] = $file_name;
+                if($address_explode[3] == "premium_video"){
+                    $file_code = explode ("_", $address_explode[4]);
+                    $file_name = $file_code[0];
+                    $file_code = $file_code[1];
+                    $return["file_code"] = $file_code;
+                    $return["file_name"] = $file_name;
+                }
+                break;
+            case "istockphoto.com":
+                if (strlen ($address_explode[4]) < 5) {
+                    return $return;
+                }
+                $file_code = explode ("-", $address_explode[4]);
+                $file_code = $file_code[ count ($file_code) - 1 ];
+                $file_name = explode ("-" . $file_code, $address_explode[4])[0];
+                $return["file_code"] = $file_code;
+                $return["file_name"] = $file_name;
+                break;
+            case "elements.envato.com":
+
+                if (count ($address_explode) > 4) {
+                    $file_code = explode ("-", $address_explode[4]);
+                    $file_code = $file_code[ count ($file_code) - 1 ];
+                    $file_name = str_replace ("-" . $file_code, "", $address_explode[4]);
+                } else {
+                    $file_code = explode ("-", $address_explode[3]);
+                    $file_code = $file_code[ count ($file_code) - 1 ];
+                    $file_name = str_replace ("-" . $file_code, "", $address_explode[3]);
+
+                }
+                $return["file_code"] = $file_code;
+                $return["file_name"] = $file_name;
+                break;
+            case "flaticon.com":
+                if (strlen ($address_explode[4]) < 5) {
+                    return $return;
+                }
+
+                $file_code1 = explode ("?", $address_explode[4])[0];
+                $file_code = explode ("_", $file_code1);
+                $file_code = $file_code[ count ($file_code) - 1 ];
+                $file_name = str_replace ("_" . $file_code, "", $file_code1);
+
+                $return["file_code"] = $file_code;
+                $return["file_name"] = $file_name;
+                break;
+            case "motionarray.com":
+                if (strlen ($address_explode[4]) < 5) {
+                    return $return;
+                }
+
+                $file_code = explode ("-", $address_explode[4]);
+                $file_code = $file_code[ count ($file_code) - 1 ];
+                $file_name = str_replace ("-" . $file_code, "", $address_explode[4]);
+
+                $return["file_code"] = $file_code;
+                $return["file_name"] = $file_name;
+                break;
+
+            case "shutterstock.com":
+                if (strlen ($address_explode[4]) < 5) {
+                    return $return;
+                }
+                $file_code = explode ("-", $address_explode[4]);
+                $file_code = $file_code[ count ($file_code) - 1 ];
+                $file_name = str_replace ("-" . $file_code, "", $address_explode[4]);
+
+                $return["file_code"] = $file_code;
+                $return["file_name"] = $file_name;
+                break;
+
+            case "stock.adobe.com":
+                if (strlen ($address_explode[5]) < 5) {
+                    return $return;
+                }
+                $file_code = $address_explode[5];
+                $file_code = explode ("?", $file_code)[0];
+                $file_name = $address_explode[4];
+
+                $return["file_code"] = $file_code;
+                $return["file_name"] = $file_name;
+                break;
+
+            case "vecteezy.com":
+                if (strlen ($address_explode[4]) < 5) {
+                    return $return;
+                }
+                $file_code = $address_explode[4];
+                $file_code = explode ("-", $file_code)[0];
+                $file_name = str_replace ($file_code . "-", "", $address_explode[4]);
+
+                $return["file_code"] = $file_code;
+                $return["file_name"] = $file_name;
+                break;
+            case "dreamstime.com":
+                if (strlen ($address_explode[3]) < 5) {
+                    return $return;
+                }
+                $file_code = explode ("-", $address_explode[3]);
+                $file_code = $file_code[ count ($file_code) - 1 ];
+                $file_name = str_replace ("-" . $file_code, "", $address_explode[3]);
+
+                $return["file_code"] = $file_code;
+                $return["file_name"] = $file_name;
+                break;
+
+            default :
+
+                if (count ($address_explode) > 4) {
+                    $file_code = explode ("-", $address_explode[4]);
+                    $file_code = $file_code[ count ($file_code) - 1 ];
+                    $file_name = str_replace ("-" . $file_code, "", $address_explode[4]);
+                } else {
+                    $file_code = explode ("-", $address_explode[3]);
+                    $file_code = $file_code[ count ($file_code) - 1 ];
+                    $file_name = str_replace ("-" . $file_code, "", $address_explode[3]);
+
+                }
+                $return["file_code"] = $file_code;
+                $return["file_name"] = $file_name;
+                break;
+        }
+
+        if ($site_name == "elements.envato.com") {
+            $return["site"] = "envato";
+        } elseif ($site_name == "stock.adobe.com") {
+            $return["site"] = "StockAdobe";
+        } else {
+            $return["site"] = explode (".", $site_name)[0];
+        }
+
+        return $return;
+    }
+
+    public function get_site_status_send ($link)
+    {
+        $address_explode = explode ("/", $link);
+        $site_name = $address_explode[2];
+        $site_name = str_replace ("www.", "", $site_name);
+
+        $sql = "SELECT * FROM `prices` WHERE site='$site_name' LIMIT 1";
+        $results = $this->prepare ($sql)->resultStr ();
+        $return = false;
+        foreach ($results as $row) {
+            $return = $row->count_order_automatic_status;
+        }
+
+        return $return;
+
+    }
+
+    public function get_group_order_price ($site)
+    {
+
+        $sql = "SELECT * FROM `prices` WHERE site='$site' LIMIT 1";
+        $results = $this->prepare ($sql)->resultStr ();
+        $return = false;
+        foreach ($results as $row) {
+            $return = $row;
+        }
+
+        return $return;
+
+    }
+
+    public function get_group_order_price_by_id ($id)
+    {
+
+        $sql = "SELECT * FROM `prices` WHERE id=$id LIMIT 1";
+        $results = $this->prepare ($sql)->resultStr ();
+        $return = false;
+        foreach ($results as $row) {
+            $return = $row;
+        }
+
+        return $return;
+
+    }
+
+    public function get_site_price ($link, $plan)
+    {
+        $address_explode = explode ("/", $link);
+        $site_name = $address_explode[2];
+        $site_name = str_replace ("www.", "", $site_name);
+        $sites = json_decode ($this->get_primes_by_id ($plan)->prices);
+        $price_final = 0;
+
+        foreach ($sites as $site) {
+            if (isset($site->$site_name)) {
+                $price_final = $site->$site_name;
+            }
+        }
+
+        return $price_final;
+    }
+
+    public function get_count_order_site_price ($link)
+    {
+        $address_explode = explode ("/", $link);
+        $site_name = $address_explode[2];
+        $site_name = str_replace ("www.", "", $site_name);
+        $sql = "SELECT * FROM `prices` WHERE site='$site_name'";
+        $results = $this->prepare ($sql)->resultStr ();
+        $return = false;
+        foreach ($results as $row) {
+            $return = $row;
+        }
+
+        return $return;
+    }
+
+    public function get_site_wrong_link_helper ($site_name)
+    {
+
+        $sql = "SELECT * FROM `wrong_link_help` WHERE site='$site_name'";
+        $results = $this->prepare ($sql)->resultStr ();
+        $return = false;
+        foreach ($results as $row) {
+            $return = $row;
+        }
+
+        return $return;
+    }
+
+    public function get_site_price_by_id ($id)
+    {
+        $sql = "SELECT * FROM `prices` WHERE id=$id";
+        $results = $this->prepare ($sql)->resultStr ();
+        $return = false;
+        foreach ($results as $row) {
+            $return = $row;
+        }
+
+        return $return;
+    }
+
+    public function get_site_price_by_name ($name)
+    {
+        $sql = "SELECT * FROM `prices` WHERE site='$name'";
+        $results = $this->prepare ($sql)->resultStr ();
+        $return = false;
+        foreach ($results as $row) {
+            $return = $row;
+        }
+
+        return $return;
+    }
+
+    public function get_pending ()
+    {
+        $sql = "SELECT * FROM `send` ORDER BY `id` DESC LIMIT 10";
+        $results = $this->prepare ($sql)->resultStr ();
+        $array = [];
+        $row = [];
+        foreach ($results as $row) {
+            $textesh = jdate ("m/d H:i", $row->time);
+            $arr = [
+                [
+                    "text" => $row->fa_type,
+                    "callback_data" => "mngproject-" . $row->id,
+                ],
+                [
+                    "text" => $textesh,
+                    "callback_data" => "mngproject-" . $row->id,
+                ],
+                [
+                    "text" => $row->users,
+                    "callback_data" => "mngproject-" . $row->id,
+                ],
+                ["text" => "حذف", "callback_data" => "delproject-" . $row->id],
+            ];
+            array_push ($array, $arr);
+        }
+        return $array;
+    }
+
+    public function get_primes ($type)
+    {
+        $sql = "SELECT * FROM `custom_prices` WHERE type='$type' and show_button='on' ORDER BY `id` DESC LIMIT 10";
+        $results = $this->prepare ($sql)->resultStr ();
+        $array = [];
+        $row = [];
+        foreach ($results as $row) {
+            $array[] = [$row->name];
+        }
+        if ($type == "prime") {
+
+            $array[] = ["بازگشت به منوی اصلی"];
+        } else {
+
+            $array[] = ["بازگشت به منوی قبلی"];
+        }
+        return $array;
+    }
+
+    public function get_primes_by_name ($name)
+    {
+        $sql = "SELECT * FROM `custom_prices` WHERE name='$name' ORDER BY `id` DESC LIMIT 1";
+        $results = $this->prepare ($sql)->resultStr ();
+        if (is_array ($results)) {
+
+            return $results[0];
+        } else {
+            return false;
+        }
+    }
+
+    public function get_primes_by_id ($id)
+    {
+        $sql = "SELECT * FROM `custom_prices` WHERE id='$id' ORDER BY `id` DESC LIMIT 1";
+        $results = $this->prepare ($sql)->resultStr ();
+        if (is_array ($results)) {
+
+            return $results[0];
+        } else {
+            return false;
+        }
+    }
+
+    public function stats ()
+    {
+        $users = $this->prepare ("SELECT * FROM `users`")->rowCount ();
+
+        $groups = $this->prepare ("SELECT * FROM `allow_groups`")->rowCount ();
+        return [$users, $groups];
+    }
+
+    public function insert_s2a (
+        $type,
+        $file_id,
+        $text,
+        $success,
+        $failed,
+        $users,
+        $status,
+        $fa_type,
+        $time,
+        $destionation
+    )
+    {
+        $sql = "INSERT INTO `send` (`type`,`file_id`,`text`,`success`,`failed`,`users`,`status`,`fa_type`,`time`,`destionation`) VALUES ('$type','$file_id','$text',$success,$failed,$users,'$status','$fa_type','$time',$destionation)";
+        $this->prepare ($sql)->execute ();
+        return true;
+    }
+
+    public function add_file (
+        $link,
+        $chat_id,
+        $msg_id,
+        $user_id,
+        $preview,
+        $preview_type
+    )
+    {
+        $link = str_replace ("http://", "https://", $link);
+        $time = time ();
+        $sql = "INSERT INTO `files` (`link`,`chat_id`,`msg_id`,`user_id`,`preview`,`preview_type`,`status`,`time`) VALUES (?,?,?,?,?,?,?,?)";
+        
+        try{
+        $this->prepare ($sql);
+        $this->execute ([$link, $chat_id ,$msg_id ,$user_id ,$preview ,$preview_type ,'waiting' ,$time]);
+        return $this->lastInsertId ();  
+        }catch (Exception $e){
+        error_log($sql);
+        error_log("error on add file ".$e);
+        }
+    }
+
+    public function add_file_group (
+        $links,
+        $site,
+        $msg_id,
+        $user_id,
+        $price
+    )
+    {
+        $time = time ();
+        $sql = "INSERT INTO `files_group` (`links`,`site`,`msg_id`,`user_id`,`price`,`status`,`time`) VALUES ('$links',$site,'$msg_id','$user_id',$price,'waiting','$time')";
+        $this->prepare ($sql)->execute ();
+        return $this->lastInsertId ();
+    }
+
+    public function update_files_group_info ($row, $new_data, $id)
+    {
+        $sql = "UPDATE `files_group` SET $row=$new_data WHERE id=$id";
+        return $this->prepare ($sql)->execute ();
+    }
+
+    public function get_file_group_by_id ($id)
+    {
+        if (is_numeric ($id)) {
+            return $this->prepare (
+                "SELECT * FROM `files_group` WHERE id=$id"
+            )->resultStr ();
+        } else {
+            return [];
+        }
+    }
+
+    public function add_post (
+        $file_id,
+        $type,
+        $caption
+    )
+    {
+        $time = time ();
+        $sql = "INSERT INTO `files` (link,type,download,chat_id,msg_id,user_id,file_id,caption,preview,preview_type,status,time ) VALUES ('UNSET','$type',0,'UNSET','UNSET','UNSET','$file_id','$caption','UNSET','UNSET','sent','$time')";
+        $this->prepare ($sql)->execute ();
+        return $this->lastInsertId ();
+    }
+
+    public function add_file_pack (
+        $file_type,
+        $file_id,
+        $preview_type,
+        $preview_file,
+        $description,
+        $allow_dl
+    )
+    {
+        $time = time ();
+        $sql = "INSERT INTO `filepacks` (type,file_id,description,preview,preview_type,allow_download,downloaders,time) VALUES ('$file_type','$file_id','$description','$preview_file','$preview_type',$allow_dl,'[]','$time')";
+        $this->prepare ($sql)->execute ();
+        return $this->lastInsertId ();
+    }
+
+    public function check_exsist_file ($link)
+    {
+        $link = str_replace ("http://", "https://", $link);
+
+        $sql = "SELECT * FROM `files` WHERE link='$link' AND file_id IS NOT NULL";
+        if ($this->prepare ($sql)->rowCount () < 1) {
+            return true;
+        } else {
+            $results = $this->prepare ($sql)->resultStr ();
+            foreach ($results as $row) {
+                return [
+                    $row->id,
+                    $row->preview,
+                    $row->preview_type,
+                    $row->status,
+                ];
+            }
+        }
+    }
+    
+        public function get_files_open_by_chat_id ($chat_id)
+    {
+        return $this->prepare (
+            "SELECT * FROM `files` WHERE chat_id='$chat_id' and status='sending'"
+        )->rowCount ();
+
+
+    }
+
+    public function get_file_by_id_and_user ($id, $user)
+    {
+        $return = false;
+
+        $res = $this->prepare (
+            "SELECT * FROM `files` WHERE id=$id and user_id=$user and status='sent'"
+        )->resultStr ();
+        foreach ($res as $result) {
+            $return = $result;
+        }
+
+        return $return;
+
+    }
+
+    public function get_file_by_id ($id)
+    {
+        if (is_numeric ($id)) {
+            return $this->prepare (
+                "SELECT * FROM `files` WHERE id=$id"
+            )->resultStr ();
+        } else {
+            return false;
+        }
+    }
+
+    public function get_file_by_msg_id ($msg_id, $chat_id)
+    {
+        return $this->prepare (
+            "SELECT * FROM `files` WHERE msg_id = '$msg_id' and chat_id='$chat_id'"
+        )->resultStr ();
+    }
+
+    public function get_file_by_link ($link)
+    {
+        return $this->prepare (
+            "SELECT * FROM `files` WHERE link = '$link'"
+        )->resultStr ();
+    }
+
+    public function get_file_compeleted_by_link ($link)
+    {
+        return $this->prepare (
+            "SELECT * FROM `files` WHERE link = '$link' and status='sent' and file_id IS NOT NULL"
+        )->resultStr ();
+    }
+
+    public function update_group ($col, $new_data, $where_1, $where_2)
+    {
+        $sql = "UPDATE `allow_groups` SET $col=$new_data WHERE $where_1=$where_2";
+        return $this->prepare ($sql)->execute ();
+    }
+
+    public function update_file_info ($row, $new_data, $id)
+    {
+        $sql = "UPDATE `files` SET $row=? WHERE id=$id";
+        $this->prepare ($sql);
+        $this->execute ([$new_data]);
+    }
+
+    public function update_file_info_by_link ($row, $new_data, $link)
+    {
+        $sql = "UPDATE `files` SET $row=$new_data WHERE link='$link'";
+        return $this->prepare ($sql)->execute ();
+    }
+
+
+    public function update_file ($link, $type, $file_id, $caption, $ext)
+    {
+        $sql = "UPDATE `files` SET type='$type',file_id='$file_id',caption='$caption',status='sent',ext='$ext' WHERE link='$link'";
+        $this->prepare ($sql)->execute ();
+        return $this->lastInsertId ();
+    }
+
+    public function update_file_download ($id)
+    {
+        $sql = "UPDATE `files` SET download=download + 1 WHERE id='$id'";
+        return $this->prepare ($sql)->execute ();
+    }
+
+}
+
+?>
