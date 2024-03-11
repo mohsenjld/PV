@@ -1,0 +1,188 @@
+<?php
+$url="";
+foreach ($_GET as $getParam => $value) {
+    $url.= "&".$getParam . '=' . $value ;
+}
+
+
+$user_agents = [
+    'Mozilla/5.0 (X11; Linux x86_64; rv:7.0) Gecko/20131109 Firefox/37.0',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/5340 (KHTML, like Gecko) Chrome/36.0.854.0 Mobile Safari/5340',
+    'Mozilla/5.0 (Windows; U; Windows NT 5.01) AppleWebKit/532.39.4 (KHTML, like Gecko) Version/5.0.5 Safari/532.39.4',
+    'Mozilla/5.0 (Windows NT 6.1; en-US; rv:1.9.1.20) Gecko/20140626 Firefox/35.0'
+];
+try {
+    $url=str_replace("&url=","",$url);
+    if(strpos($url,"freepik.com")){
+        $url = explode("?",$url);
+        $url = $url[0];
+
+        $url = explode("#",$url);
+        $url = $url[0];
+    }
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_BINARYTRANSFER, true);
+    curl_setopt($ch, CURLOPT_COOKIEJAR, 'cookie.txt');
+    curl_setopt($ch, CURLOPT_COOKIEFILE, 'cookie.txt');
+    curl_setopt($ch, CURLOPT_USERAGENT, $user_agents[rand(0,count($user_agents) - 1)]);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+    curl_setopt($ch, CURLOPT_HEADER, 1);
+//curl_setopt($ch, CURLOPT_VERBOSE, true);
+    curl_setopt($ch, CURLOPT_STDERR,  fopen('php://stdout', 'w'));
+    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 1);
+
+
+    $content = curl_exec($ch);
+    curl_close($ch);
+
+
+    if(strpos($url,"freepik.com")){
+        $re2 = '%<source src="(.*)" type="video/mp4"%m';
+        preg_match_all($re2, $content, $output2, PREG_SET_ORDER, 0);
+        if(!empty($output2[0][1])) {
+            $result = ["result" => true, "type" => "video", "url" => $output2[0][1]];
+            echo json_encode($result);
+            exit();
+        }
+        $re3 = '%<meta property="og:image" content="(.*?)"/>%m';
+        preg_match_all($re3, $content, $output3, PREG_SET_ORDER, 0);
+        if(!empty($output3[0][1])) {
+            $result = ["result" => true, "type" => "photo", "url" => $output3[0][1]];
+            echo json_encode($result);
+            exit();
+        }
+        $re = '%<meta property="og:image" content="(.*?)" />%m';
+        preg_match_all($re, $content, $output, PREG_SET_ORDER, 0);
+        $result = ["result"=>true,"type"=>"photo","url"=>$output[0][1]];
+        echo json_encode($result);
+    }elseif(strpos($url,"dreamstime.com")){
+        $re = '%<meta property="twitter:image" content="(.*?)" />%m';
+        preg_match_all($re, $content, $output, PREG_SET_ORDER, 0);
+        $result = ["result"=>true,"type"=>"photo","url"=>$output[0][1]];
+        echo json_encode($result);
+    }elseif(strpos($url,"pngtree.com")){
+
+        $re = '%<meta property="og:image" content="(.*?)" />%m';
+        preg_match_all($re, $content, $output, PREG_SET_ORDER, 0);
+        $result = ["result"=>true,"type"=>"photo","url"=>$output[0][1]];
+        echo json_encode($result);
+
+    }else if(strpos($url,"flaticon.com")){
+        $re = "%<meta name='twitter:image' content='(.*?)'>%m";
+        preg_match_all($re, $content, $output, PREG_SET_ORDER, 0);
+        $result = ["result"=>true,"type"=>"photo","url"=>$output[0][1]];
+        echo json_encode($result);
+    }else if(strpos($url,"uplabs.com")){
+        $re = '%<meta property="og:image" content="(.*?)">%m';
+        preg_match_all($re, $content, $output, PREG_SET_ORDER, 0);
+        $result = ["result"=>true,"type"=>"photo","url"=>$output[0][1]];
+        echo json_encode($result);
+    }else if(strpos($url,"motionarray.com")){
+        $re = '%><img src="https://motionarray.imgix.net/preview-(.*)" alt%m';
+        preg_match_all($re, $content, $output, PREG_SET_ORDER, 0);
+        if(!empty($output[0][1])){
+            $result = ["result"=>true,"type"=>"photo","url"=>"https://motionarray.imgix.net/preview-".$output[0][1]];
+            echo json_encode ($result);
+        }else{
+            $re = '%<source src="(.*)" type="video/mp4"%m';
+            preg_match_all($re, $content, $output, PREG_SET_ORDER, 0);
+            if(!empty($output[0][1])){
+                $result = ["result"=>true,"type"=>"video","url"=>$output[0][1]];
+                echo json_encode ($result);
+            }else{
+                $re = '%"mp3":"(.*)","ogg"%m';
+                preg_match_all($re, $content, $output, PREG_SET_ORDER, 0);
+                if(!empty($output[0][1])){
+                    $result = ["result"=>true,"type"=>"audio","url"=>str_replace ('\/','/',$output[0][1])];
+                    echo json_encode ($result);
+                }else{
+
+                    $result = ["result"=>true,"type"=>"photo","url"=>"https://fileechbot.ir/sample.jpg"];
+                    echo json_encode($result);
+                }
+            }
+
+
+        }
+
+        //echo $content;
+    }else if(strpos($url,"shutterstock.com")){
+        $re = '%property="og:ttl"/><meta content="(.*)" property="og:image"/>%m';
+        preg_match_all($re, $content, $output, PREG_SET_ORDER, 0);
+$image = explode ('" property="og:image"/>',$output[0][1]);
+        $result = ["result"=>true,"type"=>"photo","url"=>$image[0]];
+        echo json_encode ($result);
+
+    }else if(strpos($url,"stock.adobe.com")){
+
+        $re = '%<meta property="og:image" content="(.*?)" />%m';
+        preg_match_all($re, $content, $output, PREG_SET_ORDER, 0);
+        $result = ["result"=>true,"type"=>"photo","url"=>$output[0][1]];
+        echo json_encode($result);
+
+    }else if(strpos($url,"istockphoto.com")){
+
+        $re = '%property="og:title" /><meta content="(.*)" property="og:image" /><%m';
+        preg_match_all($re, $content, $output, PREG_SET_ORDER, 0);
+        $result = ["result"=>true,"type"=>"photo","url"=>$output[0][1]];
+        echo json_encode($result);
+        //echo $content;
+
+    }else if(strpos($url,"iconscout.com")){
+
+        $re = '%<meta data-n-head="ssr" data-hid="og:image" property="og:image" content="(.*?)">%m';
+        preg_match_all($re, $content, $output, PREG_SET_ORDER, 0);
+        $type = "photo";
+        if(strpos($output[0][1],".mp3") || strpos($output[0][1],".m4a")){
+            $type = "audio";
+        }
+        if(strpos($output[0][1],".mp4") || strpos($output[0][1],".mov")){
+            $type = "animation";
+        }
+        $result = ["result"=>true,"type"=>$type,"url"=>$output[0][1]];
+        echo json_encode($result);
+       // echo $content;
+
+    }else if(strpos($url,"elements.envato")){
+        $re = '%<video src="(.*?)" muted="(.*?)" seek="(.*?)" class="(.*?)" loop="(.*?)" preload="(.*?)">%m';
+        preg_match_all($re, $content, $output, PREG_SET_ORDER, 0);
+
+        if(!empty($output[0][1])){
+            $result = ["result"=>true,"type"=>"video","url"=>$output[0][1]];
+            echo json_encode($result);
+        }else{
+            $re = '%contentUrl":"(.*)"%m';
+            preg_match_all($re, $content, $output, PREG_SET_ORDER, 0);
+            if(!empty($output[0][1])){
+                if(strpos($output[0][1],".mp3")){
+                    $result = ["result"=>true,"type"=>"audio","url"=>explode("?",$output[0][1])[0]];
+                }else{
+                    $result = ["result"=>true,"type"=>"photo","url"=>explode("?",$output[0][1])[0]."?auto=compress%2Cformat&fit=max&mark=https%3A%2F%2Felements-assets.envato.com%2Fstatic%2Fwatermark2.png&markalign=center%2Cmiddle&markalpha=18&w=700&s=da046c0f66b71bc5bd12d7b9a3b7f0fb"];
+
+                }
+                echo json_encode($result);
+            }else{
+                $re = '%"src":"(.*)"%m';
+                preg_match_all($re, $content, $output, PREG_SET_ORDER, 0);
+                $result = ["result"=>true,"type"=>"photo","url"=>explode('"},"localizedUrl"',str_replace ('\/','/',$output[0][1]))[0]];
+                echo json_encode($result);
+            }
+
+        }
+
+    }else{
+        $result = ["result"=>true,"type"=>"photo","url"=>"https://fileechbot.ir/sample.jpg"];
+        echo json_encode($result);
+    }
+
+
+//catch exception
+}catch(Exception $e) {
+        $result = ["result"=>true,"type"=>"photo","url"=>"https://fileechbot.ir/sample.jpg"];
+        echo json_encode($result);
+}
+
+
+
+
+?>
